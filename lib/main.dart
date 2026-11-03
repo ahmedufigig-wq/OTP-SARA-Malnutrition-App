@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'data/app_database.dart';
@@ -24,7 +25,7 @@ class OtpSaraApp extends StatelessWidget {
       ),
       useMaterial3: true,
     ),
-    home: const Directionality(textDirection: TextDirection.rtl, child: PatientHome()),
+    home: const Directionality(textDirection: ui.TextDirection.rtl, child: PatientHome()),
   );
 }
 
