@@ -65,6 +65,8 @@ class _PatientFormState extends State<PatientForm> {
   DateTime admission = DateTime.now();
   String gender = 'ذكر', twins = 'لا', zScore = 'أقل من -3', admissionType = 'جديد', outcome = 'مستمر';
   bool saving = false;
+  final Set<String> reasons = {};
+  final List<String> reasonOptions = ['MUAC منخفض','Z-score منخفض','وذمة تغذوية','تحويل من مرفق صحي','انتكاسة / تدهور الحالة'];
   String get visitDate => DateFormat('yyyy-MM-dd').format(admission.add(const Duration(days: 7)));
   String get admissionDate => DateFormat('yyyy-MM-dd').format(admission);
 
@@ -117,10 +119,10 @@ class _PatientFormState extends State<PatientForm> {
         'admission_date': admissionDate, 'visit_date': visitDate,
         'twins': twins, 'weight_kg': weight, 'height_cm': height,
         'z_score': zScore, 'muac_cm': muac,
-        'admission_reasons': '', 'admission_type': admissionType, 'outcome': outcome,
+        'admission_reasons': reasons.join('، '), 'admission_type': admissionType, 'outcome': outcome,
       });
       for (final c in controllers) { c.clear(); }
-      setState(() { admission = DateTime.now(); });
+      setState(() { admission = DateTime.now(); reasons.clear(); });
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حفظ سجل الطفل بنجاح')));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر الحفظ: قد يكون رقم SAM مسجلاً مسبقاً. $e')));
@@ -155,6 +157,9 @@ class _PatientFormState extends State<PatientForm> {
         field('MUAC — محيط منتصف العضد (سم)', 8, required: true, type: const TextInputType.numberWithOptions(decimal:true)),
       ]),
       section('القسم C — القبول والخروج', [
+        const Text('أسباب القبول', style: TextStyle(fontWeight: FontWeight.w600)),
+        ...reasonOptions.map((reason) => CheckboxListTile(contentPadding: EdgeInsets.zero, dense: true, title: Text(reason), value: reasons.contains(reason), onChanged: (checked) => setState(() { if (checked == true) { reasons.add(reason); } else { reasons.remove(reason); } }))),
+        const SizedBox(height: 8),
         DropdownButtonFormField<String>(value: admissionType, decoration: const InputDecoration(labelText: 'نوع القبول'), items: ['جديد','إعادة قبول','تحويل داخلي'].map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(), onChanged:(v)=>setState(()=>admissionType=v!)),
         DropdownButtonFormField<String>(value: outcome, decoration: const InputDecoration(labelText: 'حالة الخروج / التحويل'), items: ['مستمر','تعافٍ','تحويل خارجي','تغيب','وفاة','غير ذلك'].map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(), onChanged:(v)=>setState(()=>outcome=v!)),
       ]),
