@@ -170,27 +170,237 @@ class _PatientFormState extends State<PatientForm> {
   );
 }
 
+
 class PatientsList extends StatefulWidget {
   const PatientsList({super.key});
   @override
   State<PatientsList> createState() => _PatientsListState();
 }
+
 class _PatientsListState extends State<PatientsList> {
+  final searchController = TextEditingController();
   late Future<List<Map<String,Object?>>> future;
   @override
-  void initState() { super.initState(); future = AppDatabase.instance.getPatients(); }
+  void initState() { super.initState(); _load(); }
+  void _load() => future = AppDatabase.instance.getPatients(search: searchController.text);
+  Future<void> _search(String value) async {
+    final result = AppDatabase.instance.getPatients(search: value);
+    setState(() => future = result);
+  }
   @override
-  Widget build(BuildContext context) => FutureBuilder<List<Map<String,Object?>>>(
-    future: future,
-    builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting) return const Center(child:CircularProgressIndicator());
-      if (snapshot.hasError) return Center(child: Text('حدث خطأ: ${snapshot.error}'));
-      final rows = snapshot.data ?? [];
-      if (rows.isEmpty) return const Center(child: Text('لا توجد سجلات بعد'));
-      return ListView.builder(padding: const EdgeInsets.all(12), itemCount: rows.length, itemBuilder: (context,i) {
-        final p = rows[i];
-        return Card(child: ListTile(leading: const CircleAvatar(backgroundColor:mint,child:Icon(Icons.child_care,color:teal)), title: Text('${p['child_name']}'), subtitle: Text('SAM: ${p['sam_number']}  •  العمر: ${p['age_months']} شهر\nموعد المتابعة: ${p['visit_date']}'), isThreeLine: true));
-      });
-    },
+  void dispose() { searchController.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) => Column(children: [
+    Padding(padding: const EdgeInsets.fromLTRB(12,12,12,4), child: TextField(
+      controller: searchController,
+      onChanged: _search,
+      decoration: InputDecoration(
+        hintText: 'ابحث باسم الطفل أو رقم SAM',
+        prefixIcon: const Icon(Icons.search),
+        suffixIcon: IconButton(icon: const Icon(Icons.clear), onPressed: () { searchController.clear(); _search(''); }),
+      ),
+    )),
+    Expanded(child: FutureBuilder<List<Map<String,Object?>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child:CircularProgressIndicator());
+        if (snapshot.hasError) return Center(child: Text('حدث خطأ: ${snapshot.error}'));
+        final rows = snapshot.data ?? [];
+        if (rows.isEmpty) return Center(child: Text(searchController.text.isEmpty ? 'لا توجد سجلات محفوظة بعد' : 'لا توجد نتائج مطابقة للبحث'));
+        return ListView.builder(padding: const EdgeInsets.all(12), itemCount: rows.length, itemBuilder: (context,i) {
+          final p = rows[i];
+          return Card(child: ListTile(
+            leading: const CircleAvatar(backgroundColor:mint,child:Icon(Icons.child_care,color:teal)),
+            title: Text('${p['child_name']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text('SAM: ${p['sam_number']}  •  العمر: ${p['age_months']} شهر\\nآخر موعد متابعة: ${p['visit_date']}'),
+            isThreeLine: true,
+            trailing: const Icon(Icons.chevron_left),
+            onTap: () async {
+              await Navigator.push(context, MaterialPageRoute(builder: (_) => PatientDetails(patientId: p['id'] as int)));
+              if (mounted) _search(searchController.text);
+            },
+          ));
+        });
+      },
+    )),
+  ]);
+}
+
+class PatientDetails extends StatefulWidget {
+  final int patientId;
+  const PatientDetails({super.key, required this.patientId});
+  @override
+  State<PatientDetails> createState() => _PatientDetailsState();
+}
+
+class _PatientDetailsState extends State<PatientDetails> {
+  late Future<void> loading;
+  Map<String,Object?>? patient;
+  List<Map<String,Object?>> visits = [];
+  @override
+  void initState() { super.initState(); loading = _load(); }
+  Future<void> _load() async {
+    patient = await AppDatabase.instance.getPatient(widget.patientId);
+    visits = await AppDatabase.instance.getVisits(widget.patientId);
+  }
+  Future<void> _refresh() async {
+    setState(() { loading = _load(); });
+    await loading;
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _editPatient() async {
+    if (patient == null) return;
+    final name = TextEditingController(text: '${patient!['child_name'] ?? ''}');
+    final sam = TextEditingController(text: '${patient!['sam_number'] ?? ''}');
+    final age = TextEditingController(text: '${patient!['age_months'] ?? ''}');
+    final phone = TextEditingController(text: '${patient!['phone'] ?? ''}');
+    final gov = TextEditingController(text: '${patient!['governorate'] ?? ''}');
+    final district = TextEditingController(text: '${patient!['district'] ?? ''}');
+    final village = TextEditingController(text: '${patient!['village'] ?? ''}');
+    final saved = await showDialog<bool>(context: context, builder: (dialogContext) => AlertDialog(
+      title: const Text('تعديل بيانات الطفل'),
+      content: SizedBox(width: 420, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        _editField(name, 'اسم الطفل'),
+        _editField(sam, 'رقم SAM'),
+        _editField(age, 'العمر بالشهر', number: true),
+        _editField(phone, 'رقم الهاتف'),
+        _editField(gov, 'المحافظة'),
+        _editField(district, 'المديرية / العزلة'),
+        _editField(village, 'القرية'),
+      ]))),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
+        FilledButton(onPressed: () {
+          if (name.text.trim().isEmpty || sam.text.trim().isEmpty || int.tryParse(age.text) == null) return;
+          Navigator.pop(dialogContext, true);
+        }, child: const Text('حفظ التعديلات')),
+      ],
+    ));
+    if (saved == true) {
+      try {
+        await AppDatabase.instance.updatePatient(widget.patientId, {
+          'child_name': name.text.trim(), 'sam_number': sam.text.trim(),
+          'age_months': int.parse(age.text), 'phone': phone.text.trim(),
+          'governorate': gov.text.trim(), 'district': district.text.trim(), 'village': village.text.trim(),
+        });
+        await _refresh();
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر حفظ التعديل: $e')));
+      }
+    }
+    for (final c in [name,sam,age,phone,gov,district,village]) { c.dispose(); }
+  }
+
+  Widget _editField(TextEditingController c, String label, {bool number = false}) =>
+    Padding(padding: const EdgeInsets.only(bottom: 10), child: TextField(controller: c, keyboardType: number ? TextInputType.number : TextInputType.text, decoration: InputDecoration(labelText: label)));
+
+  Future<void> _editVisit([Map<String,Object?>? visit]) async {
+    final weight = TextEditingController(text: visit == null ? '' : '${visit['weight_kg']}');
+    final height = TextEditingController(text: visit == null ? '' : '${visit['height_cm']}');
+    final muac = TextEditingController(text: visit == null || visit['muac_cm'] == null ? '' : '${visit['muac_cm']}');
+    final zscore = TextEditingController(text: visit == null ? '' : '${visit['z_score'] ?? ''}');
+    final notes = TextEditingController(text: visit == null ? '' : '${visit['notes'] ?? ''}');
+    DateTime date = visit == null ? DateTime.now() : (DateTime.tryParse('${visit['visit_date']}') ?? DateTime.now());
+    final saved = await showDialog<bool>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (context, setDialogState) => AlertDialog(
+      title: Text(visit == null ? 'إضافة زيارة جديدة' : 'تعديل بيانات الزيارة'),
+      content: SizedBox(width: 420, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(contentPadding: EdgeInsets.zero, title: const Text('تاريخ الزيارة'), subtitle: Text(DateFormat('yyyy-MM-dd').format(date)), trailing: IconButton(icon: const Icon(Icons.calendar_month), onPressed: () async {
+          final d = await showDatePicker(context: dialogContext, initialDate: date, firstDate: DateTime(2000), lastDate: DateTime(2100));
+          if (d != null) setDialogState(() => date = d);
+        })),
+        _editField(weight, 'الوزن (كجم)', number: true),
+        _editField(height, 'الطول (سم)', number: true),
+        _editField(muac, 'MUAC (سم)', number: true),
+        _editField(zscore, 'Z-score'),
+        _editField(notes, 'ملاحظات الزيارة'),
+      ]))),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
+        FilledButton(onPressed: () {
+          final w = double.tryParse(weight.text), h = double.tryParse(height.text);
+          if (w == null || w <= 0 || h == null || h <= 0) return;
+          Navigator.pop(dialogContext, true);
+        }, child: const Text('حفظ')),
+      ],
+    )));
+    if (saved == true) {
+      final data = {
+        'visit_date': DateFormat('yyyy-MM-dd').format(date),
+        'weight_kg': double.parse(weight.text),
+        'height_cm': double.parse(height.text),
+        'muac_cm': double.tryParse(muac.text),
+        'z_score': zscore.text.trim(),
+        'notes': notes.text.trim(),
+      };
+      if (visit == null) {
+        await AppDatabase.instance.addVisit(widget.patientId, data);
+      } else {
+        await AppDatabase.instance.updateVisit(visit['id'] as int, data);
+      }
+      await _refresh();
+    }
+    for (final c in [weight,height,muac,zscore,notes]) { c.dispose(); }
+  }
+
+  Widget _trend(double? current, double? previous, String unit) {
+    if (current == null || previous == null) return const Text('—');
+    final diff = current - previous;
+    final same = diff.abs() < 0.0001;
+    final up = diff > 0;
+    final color = same ? Colors.blueGrey : (up ? Colors.green : Colors.red);
+    final icon = same ? Icons.trending_flat : (up ? Icons.trending_up : Icons.trending_down);
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, color: color, size: 19),
+      const SizedBox(width: 4),
+      Text(same ? 'ثبات' : (up ? 'ارتفاع' : 'انخفاض'), style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+      Text(' (${diff > 0 ? '+' : ''}${diff.toStringAsFixed(2)} $unit)', style: TextStyle(color: color, fontSize: 12)),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('ملف الطفل')),
+    floatingActionButton: FloatingActionButton.extended(onPressed: () => _editVisit(), icon: const Icon(Icons.add), label: const Text('إضافة زيارة')),
+    body: FutureBuilder<void>(future: loading, builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+      if (patient == null) return const Center(child: Text('لم يتم العثور على السجل'));
+      final p = patient!;
+      return ListView(padding: const EdgeInsets.all(14), children: [
+        Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [const CircleAvatar(backgroundColor: mint, child: Icon(Icons.child_care, color: teal)), const SizedBox(width: 10), Expanded(child: Text('${p['child_name']}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold))), IconButton(tooltip: 'تعديل بيانات الطفل', onPressed: _editPatient, icon: const Icon(Icons.edit, color: teal))]),
+          const SizedBox(height: 8),
+          Text('رقم SAM: ${p['sam_number']}'),
+          Text('العمر: ${p['age_months']} شهر  •  الجنس: ${p['gender']}'),
+          Text('الهاتف: ${p['phone'] ?? '—'}'),
+          Text('الموقع: ${p['governorate'] ?? ''} / ${p['district'] ?? ''} / ${p['village'] ?? ''}'),
+        ]))),
+        const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('سجل الزيارات ومقارنة القياسات', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: teal))),
+        if (visits.isEmpty) const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('لا توجد زيارات مسجلة'))),
+        ...List.generate(visits.length, (i) {
+          final v = visits[i];
+          final previous = i > 0 ? visits[i-1] : null;
+          final weight = (v['weight_kg'] as num?)?.toDouble();
+          final height = (v['height_cm'] as num?)?.toDouble();
+          final prevWeight = (previous?['weight_kg'] as num?)?.toDouble();
+          final prevHeight = (previous?['height_cm'] as num?)?.toDouble();
+          return Card(margin: const EdgeInsets.only(bottom: 10), child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [Expanded(child: Text('زيارة ${i+1} — ${v['visit_date']}', style: const TextStyle(fontWeight: FontWeight.bold))), IconButton(tooltip: 'تعديل الزيارة', onPressed: () => _editVisit(v), icon: const Icon(Icons.edit, color: teal))]),
+            const Divider(),
+            Text('الوزن: ${weight?.toStringAsFixed(2) ?? '—'} كجم'),
+            _trend(weight, prevWeight, 'كجم'),
+            const SizedBox(height: 7),
+            Text('الطول: ${height?.toStringAsFixed(1) ?? '—'} سم'),
+            _trend(height, prevHeight, 'سم'),
+            const SizedBox(height: 7),
+            Text('MUAC: ${v['muac_cm'] ?? '—'} سم  •  Z-score: ${v['z_score'] ?? '—'}'),
+            if ('${v['notes'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text('ملاحظات: ${v['notes']}')),
+            if (previous == null) const Padding(padding: EdgeInsets.only(top: 6), child: Text('هذه هي الزيارة المرجعية الأولى للمقارنة.', style: TextStyle(color: Colors.blueGrey, fontSize: 12))),
+          ])));
+        }),
+        const SizedBox(height: 80),
+      ]);
+    }),
   );
 }
