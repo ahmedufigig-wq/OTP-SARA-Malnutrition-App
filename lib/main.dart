@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart' as pdf;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
@@ -357,7 +358,7 @@ class _PatientDetailsState extends State<PatientDetails> {
       final doc = pw.Document();
       final p = patient!;
       doc.addPage(pw.MultiPage(
-        pageFormat: pw.PdfPageFormat.a4,
+        pageFormat: pdf.PdfPageFormat.a4,
         textDirection: pw.TextDirection.rtl,
         theme: pw.ThemeData.withFont(base: arabicFont, bold: arabicBold),
         build: (context) => [
@@ -380,7 +381,7 @@ class _PatientDetailsState extends State<PatientDetails> {
             headerStyle: pw.TextStyle(font: arabicBold, fontSize: 9),
             cellStyle: pw.TextStyle(font: arabicFont, fontSize: 8),
             cellAlignment: pw.Alignment.center,
-            headerDecoration: const pw.BoxDecoration(color: pw.PdfColors.teal100),
+            headerDecoration: const pw.BoxDecoration(color: pdf.PdfColors.teal100),
           ),
           pw.SizedBox(height: 12),
           pw.Text('ملاحظة: مؤشرات الارتفاع والانخفاض مقارنة رقمية بين الزيارات، ولا تغني عن التقييم السريري وفق بروتوكول البرنامج.', style: pw.TextStyle(font: arabicFont, fontSize: 9)),
