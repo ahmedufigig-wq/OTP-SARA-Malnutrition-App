@@ -1,6 +1,11 @@
 import 'dart:ui' as ui;
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 import 'data/app_database.dart';
 
 const teal = Color(0xFF008080);
@@ -344,6 +349,60 @@ class _PatientDetailsState extends State<PatientDetails> {
     for (final c in [weight,height,muac,zscore,notes]) { c.dispose(); }
   }
 
+  Future<void> _exportAndSharePdf() async {
+    if (patient == null) return;
+    try {
+      final arabicFont = await PdfGoogleFonts.notoNaskhArabicRegular();
+      final arabicBold = await PdfGoogleFonts.notoNaskhArabicBold();
+      final doc = pw.Document();
+      final p = patient!;
+      doc.addPage(pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        textDirection: pw.TextDirection.rtl,
+        theme: pw.ThemeData.withFont(base: arabicFont, bold: arabicBold),
+        build: (context) => [
+          pw.Header(level: 0, child: pw.Text('نظام OTP / SARA — سجل الطفل')),
+          pw.Text('اسم الطفل: ${p['child_name']}'),
+          pw.Text('رقم SAM: ${p['sam_number']}'),
+          pw.Text('العمر: ${p['age_months']} شهر   |   الجنس: ${p['gender']}'),
+          pw.Text('الهاتف: ${p['phone'] ?? '—'}'),
+          pw.Text('الموقع: ${p['governorate'] ?? ''} / ${p['district'] ?? ''} / ${p['village'] ?? ''}'),
+          pw.SizedBox(height: 12),
+          pw.Text('سجل الزيارات والقياسات', style: pw.TextStyle(font: arabicBold, fontSize: 16)),
+          pw.SizedBox(height: 8),
+          pw.TableHelper.fromTextArray(
+            headers: ['الزيارة','التاريخ','الوزن كجم','الطول سم','MUAC سم','Z-score','ملاحظات'],
+            data: visits.map((v) => [
+              '${visits.indexOf(v)+1}', '${v['visit_date']}', '${v['weight_kg']}',
+              '${v['height_cm']}', '${v['muac_cm'] ?? '—'}',
+              '${v['z_score'] ?? '—'}', '${v['notes'] ?? ''}',
+            ]).toList(),
+            headerStyle: pw.TextStyle(font: arabicBold, fontSize: 9),
+            cellStyle: pw.TextStyle(font: arabicFont, fontSize: 8),
+            cellAlignment: pw.Alignment.center,
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.teal100),
+          ),
+          pw.SizedBox(height: 12),
+          pw.Text('ملاحظة: مؤشرات الارتفاع والانخفاض مقارنة رقمية بين الزيارات، ولا تغني عن التقييم السريري وفق بروتوكول البرنامج.', style: pw.TextStyle(font: arabicFont, fontSize: 9)),
+          pw.SizedBox(height: 8),
+          pw.Text('تاريخ إنشاء التقرير: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}', style: pw.TextStyle(font: arabicFont, fontSize: 8)),
+        ],
+      ));
+      final bytes = await doc.save();
+      final dir = await getTemporaryDirectory();
+      final safeName = '${p['sam_number']}'.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      final file = File('${dir.path}/OTP_SARA_$safeName.pdf');
+      await file.writeAsBytes(bytes, flush: true);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/pdf')],
+        subject: 'سجل الطفل ${p['child_name']} — OTP SARA',
+        text: 'تقرير سجل الطفل بصيغة PDF',
+      );
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر إنشاء أو مشاركة PDF: $e')));
+    }
+  }
+
   Widget _trend(double? current, double? previous, String unit) {
     if (current == null || previous == null) return const Text('—');
     final diff = current - previous;
@@ -361,7 +420,7 @@ class _PatientDetailsState extends State<PatientDetails> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('ملف الطفل')),
+    appBar: AppBar(title: const Text('ملف الطفل'), actions: [IconButton(tooltip: 'حفظ ومشاركة PDF', onPressed: _exportAndSharePdf, icon: const Icon(Icons.picture_as_pdf))]),
     floatingActionButton: FloatingActionButton.extended(onPressed: () => _editVisit(), icon: const Icon(Icons.add), label: const Text('إضافة زيارة')),
     body: FutureBuilder<void>(future: loading, builder: (context, snapshot) {
       if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
