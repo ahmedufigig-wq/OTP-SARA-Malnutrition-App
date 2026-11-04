@@ -357,7 +357,7 @@ class _PatientDetailsState extends State<PatientDetails> {
       final doc = pw.Document();
       final p = patient!;
       doc.addPage(pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
+        pageFormat: pw.PdfPageFormat.a4,
         textDirection: pw.TextDirection.rtl,
         theme: pw.ThemeData.withFont(base: arabicFont, bold: arabicBold),
         build: (context) => [
@@ -380,7 +380,7 @@ class _PatientDetailsState extends State<PatientDetails> {
             headerStyle: pw.TextStyle(font: arabicBold, fontSize: 9),
             cellStyle: pw.TextStyle(font: arabicFont, fontSize: 8),
             cellAlignment: pw.Alignment.center,
-            headerDecoration: const pw.BoxDecoration(color: PdfColors.teal100),
+            headerDecoration: const pw.BoxDecoration(color: pw.PdfColors.teal100),
           ),
           pw.SizedBox(height: 12),
           pw.Text('ملاحظة: مؤشرات الارتفاع والانخفاض مقارنة رقمية بين الزيارات، ولا تغني عن التقييم السريري وفق بروتوكول البرنامج.', style: pw.TextStyle(font: arabicFont, fontSize: 9)),
